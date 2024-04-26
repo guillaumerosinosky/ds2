@@ -20,13 +20,17 @@ package ch.ethz.systems.strymon.ds2.flink.nexmark.queries;
 
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sinks.DummyLatencyCountingSink;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.AuctionSourceFunction;
+import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.BidSourceFunction;
+import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.KafkaGenericSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.PersonSourceFunction;
 import org.apache.beam.sdk.nexmark.model.Auction;
+import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Person;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.tuple.Tuple4;
@@ -38,6 +42,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction;
+import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,24 +58,48 @@ import java.util.HashSet;
 
         // Checking input parameters
         final ParameterTool params = ParameterTool.fromArgs(args);
+        final int auctionSrcRate = params.getInt("auction-srcRate", 20000);
 
-        // set up the execution environment
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        final int personSrcRate = params.getInt("person-srcRate", 10000);
+
+        StreamExecutionEnvironment env;
+        String remoteAddress = params.get("jobmanager.rpc.address");
+        if (remoteAddress == null) {
+            env = StreamExecutionEnvironment.getExecutionEnvironment();
+        } else {
+            env = StreamExecutionEnvironment.createRemoteEnvironment(remoteAddress.split(":")[0], Integer.parseInt(remoteAddress.split(":")[1]), "flink-examples/target/flink-examples-1.0-SNAPSHOT.jar");
+        }
+        String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        
+        RichParallelSourceFunction<Bid> bidSource;
+        RichParallelSourceFunction<Auction> auctionSource;
+        RichParallelSourceFunction<Person> personSource;
+        
+        String sourceName;
+        if (kafkaAddress.isEmpty()) {
+            //bidSource = new BidSourceFunction(srcRate);
+            auctionSource = new AuctionSourceFunction(auctionSrcRate);
+            personSource = new PersonSourceFunction(personSrcRate);
+            sourceName = "Task generator - %s";
+        } else {
+            //bidSource = new KafkaGenericSourceFunction<Bid>(Bid.class, kafkaAddress, "bid", "bid");
+            auctionSource = new KafkaGenericSourceFunction<>(Auction.class, kafkaAddress, "auction", "auction");
+            personSource = new KafkaGenericSourceFunction<>(Person.class, kafkaAddress, "person", "person");
+            sourceName = "Kafka generator - %s";
+        }
 
         // enable latency tracking
         env.getConfig().setLatencyTrackingInterval(5000);
 
         env.disableOperatorChaining();
 
-        final int auctionSrcRate = params.getInt("auction-srcRate", 20000);
 
-        final int personSrcRate = params.getInt("person-srcRate", 10000);
 
-        DataStream<Auction> auctions = env.addSource(new AuctionSourceFunction(auctionSrcRate))
+        DataStream<Auction> auctions = env.addSource(auctionSource, String.format(sourceName, "auction"), TypeInformation.of(Auction.class))
                 .name("Custom Source: Auctions")
                 .setParallelism(params.getInt("p-auction-source", 1));
 
-        DataStream<Person> persons = env.addSource(new PersonSourceFunction(personSrcRate))
+        DataStream<Person> persons = env.addSource(personSource, String.format(sourceName, "person"), TypeInformation.of(Person.class))
                 .name("Custom Source: Persons")
                 .setParallelism(params.getInt("p-person-source", 1))
                 .filter(new FilterFunction<Person>() {

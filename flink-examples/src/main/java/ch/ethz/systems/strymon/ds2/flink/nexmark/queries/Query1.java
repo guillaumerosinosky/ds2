@@ -64,14 +64,17 @@ public class Query1 {
         RichParallelSourceFunction<Auction> auctionSource;
         RichParallelSourceFunction<Person> personSource;
         
+        String sourceName;
         if (kafkaAddress.isEmpty()) {
             bidSource = new BidSourceFunction(srcRate);
             auctionSource = new AuctionSourceFunction(srcRate);
             personSource = new PersonSourceFunction(srcRate);
+            sourceName = "Task generator - %s";            
         } else {
             bidSource = new KafkaGenericSourceFunction<Bid>(Bid.class, kafkaAddress, "bid", "bid");
             auctionSource = new KafkaGenericSourceFunction<>(Auction.class, kafkaAddress, "auction", "auction");
             personSource = new KafkaGenericSourceFunction<>(Person.class, kafkaAddress, "person", "person");
+            sourceName = "Kafka generator - %s";            
         }
         
         env.disableOperatorChaining();
@@ -79,7 +82,7 @@ public class Query1 {
         // enable latency tracking
         env.getConfig().setLatencyTrackingInterval(5000);
 
-        DataStream<Bid> bids = env.addSource(bidSource, TypeInformation.of(Bid.class))
+        DataStream<Bid> bids = env.addSource(bidSource, String.format(sourceName, "bid"), TypeInformation.of(Bid.class))
                 .setParallelism(params.getInt("p-source", 1))
                 .name("Bids Source")
                 .uid("Bids-Source");

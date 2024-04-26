@@ -45,45 +45,99 @@
         },
         {
             "type": "java",
-            "name": "Query11",
+            "name": "**Query11",
             "request": "launch",
             "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query11",
-            "projectName": "flink-examples"
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "kafka-edge1:9092",                
+                "--detached",
+                "--parallelism",
+                "1"
+            ],                  
         },
         {
             "type": "java",
-            "name": "Query2",
+            "name": "**Query2",
             "request": "launch",
             "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query2",
-            "projectName": "flink-examples"
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "kafka-edge1:9092",                
+                "--detached",
+                "--parallelism",
+                "1"
+            ],                  
         },
         {
             "type": "java",
-            "name": "Query3",
+            "name": "**Query3",
             "request": "launch",
             "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query3",
-            "projectName": "flink-examples"
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "kafka-edge1:9092",                
+                "--detached",
+                "--parallelism",
+                "1"
+            ],  
         },
         {
             "type": "java",
-            "name": "Query3Stateful",
+            "name": "**Query3Stateful",
             "request": "launch",
             "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query3Stateful",
-            "projectName": "flink-examples"
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "kafka-edge1:9092",                
+                "--detached",
+                "--parallelism",
+                "1"
+            ],  
         },
         {
             "type": "java",
-            "name": "Query5",
+            "name": "**Query5",
             "request": "launch",
             "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query5",
-            "projectName": "flink-examples"
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "kafka-edge1:9092",                
+                "--detached",
+                "--parallelism",
+                "1"
+            ],  
         },
         {
             "type": "java",
-            "name": "Query8",
+            "name": "**Query8",
             "request": "launch",
             "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query8",
-            "projectName": "flink-examples"
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "kafka-edge1:9092",                
+                "--detached",
+                "--parallelism",
+                "1"
+            ],  
         },
         {
             "type": "java",
