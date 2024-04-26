@@ -42,7 +42,7 @@ services:
       - alloy-test_default      
     deploy:
       endpoint_mode: dnsrr
-      replicas: ${NUM_TM:-3}
+      replicas: ${NUM_TM:-5}
       resources:
         limits:
           cpus: '2'

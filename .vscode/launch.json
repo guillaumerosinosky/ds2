@@ -29,10 +29,19 @@
         },
         {
             "type": "java",
-            "name": "Query1",
+            "name": "**Query1",
             "request": "launch",
             "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query1",
-            "projectName": "flink-examples"
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "kafka-edge1:9092",                
+                "--detached",
+                "--parallelism",
+                "1"
+            ],                  
         },
         {
             "type": "java",
