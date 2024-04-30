@@ -31,30 +31,14 @@ public class Generator {
         }
         String kafkaProducerAddress = params.get("kafkaProducerAddress", "kafka-edge1:9092,localhost:9094");
 
-        final int bidRate = params.getInt("bidRate", 100);
-        final int auctionRate = params.getInt("auctionRate", 100);
-        final int personRate = params.getInt("personRate", 100);
+        final int bidRate = params.getInt("bidRate", 0);
+        final int auctionRate = params.getInt("auctionRate", 0);
+        final int personRate = params.getInt("personRate", 0);
 
 
         Integer parallelism = params.getInt("parallelism", 1);
         env.setParallelism(parallelism);
         //env.disableOperatorChaining();
-        DataStream<Bid> bidStream = env.addSource(new BidSourceFunction(bidRate))
-            .setParallelism(params.getInt("p-source", 1))
-            .name("Bids Source")
-            .uid("Bids-Source")
-            .slotSharingGroup("bid");
-
-        DataStream<Auction> auctionStream = env.addSource(new AuctionSourceFunction(auctionRate))
-            .name("Custom Source: Auctions")
-            .setParallelism(params.getInt("p-auction-source", 1))
-            .slotSharingGroup("auction");                  
-
-        DataStream<Person> personStream = env.addSource(new PersonSourceFunction(personRate))
-            .name("Persons source")
-            .setParallelism(params.getInt("p-person-source", 1))
-            .slotSharingGroup("person");                  
-
         
         KafkaSink<Bid> bidSink = KafkaSink.<Bid>builder()
             .setBootstrapServers(kafkaProducerAddress)
@@ -101,9 +85,34 @@ public class Generator {
                 .build())
             .build();    
 
-        bidStream.sinkTo(bidSink);
-        auctionStream.sinkTo(auctionSink);
-        personStream.sinkTo(personSink);            
+        if (bidRate > 0) {
+            DataStream<Bid> bidStream = env.addSource(new BidSourceFunction(bidRate))
+                .setParallelism(params.getInt("p-bid-source", 1))
+                .name("Bids Source")
+                .uid("Bids-Source")
+                .slotSharingGroup("bid");
+
+            bidStream.sinkTo(bidSink);
+        }
+
+        if (auctionRate > 0) {
+            DataStream<Auction> auctionStream = env.addSource(new AuctionSourceFunction(auctionRate))
+                .name("Custom Source: Auctions")
+                .setParallelism(params.getInt("p-auction-source", 1))
+                .slotSharingGroup("auction");                  
+
+            auctionStream.sinkTo(auctionSink);
+        }
+
+        if (personRate > 0) {
+            DataStream<Person> personStream = env.addSource(new PersonSourceFunction(personRate))
+                .name("Persons source")
+                .setParallelism(params.getInt("p-person-source", 1))
+                .slotSharingGroup("person");                  
+            personStream.sinkTo(personSink);            
+        } 
+
+
 
         env.execute("Nexmark Kafka generator");
     }

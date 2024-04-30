@@ -24,7 +24,9 @@
                 "kafka-edge1:9092",                
                 "--detached",
                 "--parallelism",
-                "1"
+                "2",
+                "--bidRate",
+                "1000"
             ],            
         },
         {
@@ -39,10 +41,30 @@
                 "--kafkaAddress",
                 "kafka-edge1:9092",                
                 "--detached",
-                "--parallelism",
-                "1"
+                "--p-source",
+                "2",
+                "--p-map",
+                "2"
             ],                  
         },
+        {
+            "type": "java",
+            "name": "**Query1 Alloy",
+            "request": "launch",
+            "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query1",
+            "projectName": "flink-examples",
+            "args": [
+                "--jobmanager.rpc.address",
+                "localhost:8081",
+                "--kafkaAddress",
+                "envoy1:9093,localhost:9093", 
+                "--detached",
+                "--p-source",
+                "2",
+                "--p-map",
+                "2"
+            ],                  
+        },        
         {
             "type": "java",
             "name": "**Query11",

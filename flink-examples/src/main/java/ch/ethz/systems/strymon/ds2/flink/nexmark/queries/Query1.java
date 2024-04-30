@@ -77,7 +77,8 @@ public class Query1 {
             sourceName = "Kafka generator - %s";            
         }
         
-        env.disableOperatorChaining();
+        // We keep operator chaining
+        //env.disableOperatorChaining();
 
         // enable latency tracking
         env.getConfig().setLatencyTrackingInterval(5000);

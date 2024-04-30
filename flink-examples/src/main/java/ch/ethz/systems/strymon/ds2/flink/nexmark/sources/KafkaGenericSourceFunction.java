@@ -31,10 +31,10 @@ public class KafkaGenericSourceFunction<T> extends RichParallelSourceFunction<T>
         
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", this.bootstrapServer);
-        props.setProperty("group.id", this.groupId);
+        //props.setProperty("group.id", this.groupId); // add specific kafka/timestamp command
         props.setProperty("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         props.setProperty("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-        props.setProperty("auto.offset.reset", "latest");
+        //props.setProperty("auto.offset.reset", "latest"); // add specific kafka/timestamp command
 
         consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singletonList(this.topic)); // subscribe to your topic

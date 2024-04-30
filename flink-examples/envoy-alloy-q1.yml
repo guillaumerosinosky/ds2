@@ -33,13 +33,13 @@ static_resources:
                 default_cluster: grpc-bridge-edge1
                 local_cluster: grpc-bridge-edge1
                 additional_configuration:
-                  #partition_criteria: label
-                  partition_criteria:
                   max_parallelism: 128
                   num_sources: 2
                   num_partitions: 2
                   debug_protocol: 0
-                  filters: label,^t.*
+                  filters: 
+                  projections: auction,price,bidder,dateTime 
+                  partition_criteria:
             vm_config:
               runtime: "envoy.wasm.runtime.wavm"
               vm_id: "alloy"

@@ -118,7 +118,7 @@ services:
         - node.labels.tier==injector        
 configs:   
   envoy-edge1:
-    file: ./envoy-alloy.yml
+    file: ${ENVOY_CONFIG:-./envoy-alloy-q1.yml}
     #template_driver: golang          
 networks:
   alloy-test_default:
