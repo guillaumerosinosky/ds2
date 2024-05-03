@@ -32,9 +32,11 @@ import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.formats.json.JsonDeserializationSchema;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
+import org.apache.flink.streaming.util.serialization.JSONKeyValueDeserializationSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,33 +62,28 @@ public class Query1 {
         }
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
         
-        RichParallelSourceFunction<Bid> bidSource;
-        RichParallelSourceFunction<Auction> auctionSource;
-        RichParallelSourceFunction<Person> personSource;
-        
-        String sourceName;
-        if (kafkaAddress.isEmpty()) {
-            bidSource = new BidSourceFunction(srcRate);
-            auctionSource = new AuctionSourceFunction(srcRate);
-            personSource = new PersonSourceFunction(srcRate);
-            sourceName = "Task generator - %s";            
-        } else {
-            bidSource = new KafkaGenericSourceFunction<Bid>(Bid.class, kafkaAddress, "bid", "bid");
-            auctionSource = new KafkaGenericSourceFunction<>(Auction.class, kafkaAddress, "auction", "auction");
-            personSource = new KafkaGenericSourceFunction<>(Person.class, kafkaAddress, "person", "person");
-            sourceName = "Kafka generator - %s";            
-        }
-        
         // We keep operator chaining
         //env.disableOperatorChaining();
 
         // enable latency tracking
         env.getConfig().setLatencyTrackingInterval(5000);
+        
+        DataStream<Bid> bids;
+        if (kafkaAddress.isEmpty()) {
+            bids = env.addSource(BidSourceFunction(srcRate), String.format(sourceName, "bid"), TypeInformation.of(Bid.class))
+                    .setParallelism(params.getInt("p-source", 1))
+                    .name("Bids Source")
+                    .uid("Bids-Source");
+        } else {
+            KafkaSource<Bid> source = KafkaSource.<Bid>builder()
+                .setBootstrapServers(kafkaAddress)
+                .setTopics("input-topic")
+                .setGroupId("test-group")
+                .setStartingOffsets(OffsetsInitializer.latest())
+                .setDeserializer(new GenericJsonDeserializationSchema<>(Bid.class));
+            bids = env.fromSource(source, null, "bid kafka");
 
-        DataStream<Bid> bids = env.addSource(bidSource, String.format(sourceName, "bid"), TypeInformation.of(Bid.class))
-                .setParallelism(params.getInt("p-source", 1))
-                .name("Bids Source")
-                .uid("Bids-Source");
+        }
         // SELECT auction, DOLTOEUR(price), bidder, datetime
         DataStream<Tuple4<Long, Long, Long, Long>> mapped  = bids.map(new MapFunction<Bid, Tuple4<Long, Long, Long, Long>>() {
             @Override

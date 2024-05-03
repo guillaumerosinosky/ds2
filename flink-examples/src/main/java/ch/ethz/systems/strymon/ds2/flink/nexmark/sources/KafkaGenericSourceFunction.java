@@ -11,6 +11,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Collections;
 import java.util.Properties;
 
+import java.time.Duration;
+import org.apache.kafka.common.TopicPartition;
+
 public class KafkaGenericSourceFunction<T> extends RichParallelSourceFunction<T> {
     private volatile boolean running = true;
     private transient KafkaConsumer<String, String> consumer;
@@ -31,13 +34,20 @@ public class KafkaGenericSourceFunction<T> extends RichParallelSourceFunction<T>
         
         Properties props = new Properties();
         props.setProperty("bootstrap.servers", this.bootstrapServer);
-        //props.setProperty("group.id", this.groupId); // add specific kafka/timestamp command
+        props.setProperty("group.id", this.groupId); // add specific kafka/timestamp command
         props.setProperty("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         props.setProperty("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         //props.setProperty("auto.offset.reset", "latest"); // add specific kafka/timestamp command
 
         consumer = new KafkaConsumer<>(props);
         consumer.subscribe(Collections.singletonList(this.topic)); // subscribe to your topic
+        
+        // Seek to the end of each partition
+        consumer.poll(Duration.ZERO); // This is necessary to ensure consumer is assigned partitions before seeking
+        for (TopicPartition partition : consumer.assignment()) {
+            consumer.seekToEnd(Collections.singleton(partition));
+        }
+        
         objectMapper = new ObjectMapper(); // Initialize ObjectMapper here
     }
 
