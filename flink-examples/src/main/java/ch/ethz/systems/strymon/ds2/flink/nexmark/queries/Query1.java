@@ -19,15 +19,10 @@
 package ch.ethz.systems.strymon.ds2.flink.nexmark.queries;
 
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sinks.DummyLatencyCountingSink;
-import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.AuctionSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.BidSourceFunction;
-import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.KafkaGenericSourceFunction;
-import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.PersonSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.GenericJsonDeserializationSchema;
 
-import org.apache.beam.sdk.nexmark.model.Auction;
 import org.apache.beam.sdk.nexmark.model.Bid;
-import org.apache.beam.sdk.nexmark.model.Person;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -36,11 +31,8 @@ import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.formats.json.JsonDeserializationSchema;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
-import org.apache.flink.streaming.util.serialization.JSONKeyValueDeserializationSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,6 +49,10 @@ public class Query1 {
 
         final int srcRate = params.getInt("srcRate", 100000);
         final int parallelism = params.getInt("parallelism", 1);
+
+        final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
+        final Integer fetchMinBytes = params.getInt("fetchMinBytes", 1);
+        // fetch.max.bytes default: 55Mb max.message.bytes default: 1Mb // see if necessary
 
         StreamExecutionEnvironment env;
         String remoteAddress = params.get("jobmanager.rpc.address");
@@ -86,9 +82,10 @@ public class Query1 {
                 .setGroupId("bid")
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setDeserializer(new GenericJsonDeserializationSchema<Bid>(Bid.class))
+                .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
+                .setProperty("fetch.min.bytes", fetchMinBytes.toString())
                 .build();
             bids = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "bid kafka");
-
         }
         // SELECT auction, DOLTOEUR(price), bidder, datetime
         DataStream<Tuple4<Long, Long, Long, Long>> mapped  = bids.map(new MapFunction<Bid, Tuple4<Long, Long, Long, Long>>() {
