@@ -20,17 +20,21 @@ package ch.ethz.systems.strymon.ds2.flink.nexmark.queries;
 
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sinks.DummyLatencyCountingSink;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.AuctionSourceFunction;
+import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.GenericJsonDeserializationSchema;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.KafkaGenericSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.PersonSourceFunction;
 import org.apache.beam.sdk.nexmark.model.Auction;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Person;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FlatJoinFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -65,47 +69,63 @@ public class Query8 {
             env = StreamExecutionEnvironment.createRemoteEnvironment(remoteAddress.split(":")[0], Integer.parseInt(remoteAddress.split(":")[1]), "flink-examples/target/flink-examples-1.0-SNAPSHOT.jar");
         }
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        final int parallelism = params.getInt("parallelism", 1);
+
+        final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
+        final Integer fetchMinBytes = params.getInt("fetchMinBytes", 1);
+        // fetch.max.bytes default: 55Mb max.message.bytes default: 1Mb // see if necessary
         
-        RichParallelSourceFunction<Bid> bidSource;
-        RichParallelSourceFunction<Auction> auctionSource;
-        RichParallelSourceFunction<Person> personSource;
-        
-        String sourceName;
-        if (kafkaAddress.isEmpty()) {
-            //bidSource = new BidSourceFunction(srcRate);
-            auctionSource = new AuctionSourceFunction(auctionSrcRate);
-            personSource = new PersonSourceFunction(personSrcRate);
-            sourceName = "Task generator - %s";
-        } else {
-            //bidSource = new KafkaGenericSourceFunction<Bid>(Bid.class, kafkaAddress, "bid", "bid");
-            auctionSource = new KafkaGenericSourceFunction<>(Auction.class, kafkaAddress, "auction", "auction");
-            personSource = new KafkaGenericSourceFunction<>(Person.class, kafkaAddress, "person", "person");
-            sourceName = "Kafka generator - %s";
-        }
+        //env.disableOperatorChaining();
+        env.setParallelism(parallelism);
+
+        // enable latency tracking
+        env.getConfig().setLatencyTrackingInterval(5000);
 
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
         env.getConfig().setAutoWatermarkInterval(1000);
 
-        // enable latency tracking
-        //env.getConfig().setLatencyTrackingInterval(5000);
-
-
-
         env.setParallelism(params.getInt("p-window", 1));
 
-        DataStream<Person> persons = env.addSource(personSource, String.format(sourceName, "person"), TypeInformation.of(Person.class))
-                .name("Custom Source: Persons")
-                .setParallelism(params.getInt("p-person-source", 1))
-                .assignTimestampsAndWatermarks(new PersonTimestampAssigner());
-
-        DataStream<Auction> auctions = env.addSource(auctionSource, String.format(sourceName, "auction"), TypeInformation.of(Auction.class))
-                .name("Custom Source: Auctions")
-                .setParallelism(params.getInt("p-auction-source", 1))
-                .assignTimestampsAndWatermarks(new AuctionTimestampAssigner());
-
+        DataStream<Auction> auctions;
+        if (kafkaAddress.isEmpty()) {
+            auctions = env.addSource(new AuctionSourceFunction(auctionSrcRate), "auction", TypeInformation.of(Auction.class))
+                    .setParallelism(params.getInt("p-auction-source", 1))
+                    .name("Auctions Source")
+                    .uid("Auctions-Source");
+        } else {
+            KafkaSource<Auction> source = KafkaSource.<Auction>builder()
+                .setBootstrapServers(kafkaAddress)
+                .setTopics("auction")
+                .setGroupId("auction")
+                .setStartingOffsets(OffsetsInitializer.latest())
+                .setDeserializer(new GenericJsonDeserializationSchema<Auction>(Auction.class))
+                .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
+                .setProperty("fetch.min.bytes", fetchMinBytes.toString())
+                .build();
+                auctions = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "auctions kafka");
+        }
+        DataStream<Person> persons;
+        if (kafkaAddress.isEmpty()) {
+            persons = env.addSource(new PersonSourceFunction(personSrcRate), "person", TypeInformation.of(Person.class))
+                    .setParallelism(params.getInt("p-person-source", 1))
+                    .name("Persons Source")
+                    .uid("Persons-Source");
+        } else {
+            KafkaSource<Person> source = KafkaSource.<Person>builder()
+                .setBootstrapServers(kafkaAddress)
+                .setTopics("person")
+                .setGroupId("person")
+                .setStartingOffsets(OffsetsInitializer.latest())
+                .setDeserializer(new GenericJsonDeserializationSchema<Person>(Person.class))
+                .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
+                .setProperty("fetch.min.bytes", fetchMinBytes.toString())
+                .build();
+                persons = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "persons kafka");
+        }   
         // SELECT Rstream(P.id, P.name, A.reserve)
         // FROM Person [RANGE 1 HOUR] P, Auction [RANGE 1 HOUR] A
         // WHERE P.id = A.seller;
+        //TODO: key by id (person) or seller (auction)
         DataStream<Tuple3<Long, String, Long>> joined =
                 persons.join(auctions)
                 .where(new KeySelector<Person, Long>() {

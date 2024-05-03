@@ -44,15 +44,8 @@ public class Query1 {
 
         // Checking input parameters
         final ParameterTool params = ParameterTool.fromArgs(args);
-
-        final float exchangeRate = params.getFloat("exchange-rate", 0.82F);
-
         final int srcRate = params.getInt("srcRate", 100000);
-        final int parallelism = params.getInt("parallelism", 1);
-
-        final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
-        final Integer fetchMinBytes = params.getInt("fetchMinBytes", 1);
-        // fetch.max.bytes default: 55Mb max.message.bytes default: 1Mb // see if necessary
+        final float exchangeRate = params.getFloat("exchange-rate", 0.82F);
 
         StreamExecutionEnvironment env;
         String remoteAddress = params.get("jobmanager.rpc.address");
@@ -62,6 +55,11 @@ public class Query1 {
             env = StreamExecutionEnvironment.createRemoteEnvironment(remoteAddress.split(":")[0], Integer.parseInt(remoteAddress.split(":")[1]), "flink-examples/target/flink-examples-1.0-SNAPSHOT.jar");
         }
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        final int parallelism = params.getInt("parallelism", 1);
+
+        final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
+        final Integer fetchMinBytes = params.getInt("fetchMinBytes", 1);
+        // fetch.max.bytes default: 55Mb max.message.bytes default: 1Mb // see if necessary
         
         // We keep operator chaining
         //env.disableOperatorChaining();
