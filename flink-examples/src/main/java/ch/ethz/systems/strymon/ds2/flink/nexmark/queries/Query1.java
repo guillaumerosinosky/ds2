@@ -23,15 +23,19 @@ import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.AuctionSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.BidSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.KafkaGenericSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.PersonSourceFunction;
+import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.GenericJsonDeserializationSchema;
 
 import org.apache.beam.sdk.nexmark.model.Auction;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Person;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.formats.json.JsonDeserializationSchema;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -52,6 +56,7 @@ public class Query1 {
         final float exchangeRate = params.getFloat("exchange-rate", 0.82F);
 
         final int srcRate = params.getInt("srcRate", 100000);
+        final int parallelism = params.getInt("parallelism", 1);
 
         StreamExecutionEnvironment env;
         String remoteAddress = params.get("jobmanager.rpc.address");
@@ -64,24 +69,25 @@ public class Query1 {
         
         // We keep operator chaining
         //env.disableOperatorChaining();
-
+        env.setParallelism(parallelism);
         // enable latency tracking
         env.getConfig().setLatencyTrackingInterval(5000);
         
         DataStream<Bid> bids;
         if (kafkaAddress.isEmpty()) {
-            bids = env.addSource(BidSourceFunction(srcRate), String.format(sourceName, "bid"), TypeInformation.of(Bid.class))
+            bids = env.addSource(new BidSourceFunction(srcRate), "bid", TypeInformation.of(Bid.class))
                     .setParallelism(params.getInt("p-source", 1))
                     .name("Bids Source")
                     .uid("Bids-Source");
         } else {
             KafkaSource<Bid> source = KafkaSource.<Bid>builder()
                 .setBootstrapServers(kafkaAddress)
-                .setTopics("input-topic")
-                .setGroupId("test-group")
+                .setTopics("bid")
+                .setGroupId("bid")
                 .setStartingOffsets(OffsetsInitializer.latest())
-                .setDeserializer(new GenericJsonDeserializationSchema<>(Bid.class));
-            bids = env.fromSource(source, null, "bid kafka");
+                .setDeserializer(new GenericJsonDeserializationSchema<Bid>(Bid.class))
+                .build();
+            bids = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "bid kafka");
 
         }
         // SELECT auction, DOLTOEUR(price), bidder, datetime
