@@ -18,6 +18,7 @@
 
 package ch.ethz.systems.strymon.ds2.flink.nexmark.queries;
 
+import ch.ethz.systems.strymon.ds2.flink.nexmark.generator.JsonSerializationSchema;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sinks.DummyLatencyCountingSink;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.BidSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.GenericJsonDeserializationSchema;
@@ -25,10 +26,14 @@ import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.GenericJsonDeserializat
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -55,6 +60,15 @@ public class Query1 {
             env = StreamExecutionEnvironment.createRemoteEnvironment(remoteAddress.split(":")[0], Integer.parseInt(remoteAddress.split(":")[1]), "flink-examples/target/flink-examples-1.0-SNAPSHOT.jar");
         }
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        String kafkaSinkAddress = params.get("kafkaSinkAddress", "");
+        String kafkaSinkTopic = params.get("kafkaSinkTopic", "sink");
+        String kafkaStartingOffset = params.get("kafkaStartOffset", "latest");
+        OffsetsInitializer offsetsInitializer;
+        if (kafkaStartingOffset == "latest") {
+            offsetsInitializer = OffsetsInitializer.latest();
+        } else {
+            offsetsInitializer = OffsetsInitializer.earliest();
+        }
         final int parallelism = params.getInt("parallelism", 1);
 
         final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
@@ -78,7 +92,7 @@ public class Query1 {
                 .setBootstrapServers(kafkaAddress)
                 .setTopics("bid")
                 .setGroupId("bid")
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<Bid>(Bid.class))
                 .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
                 .setProperty("fetch.min.bytes", fetchMinBytes.toString())
@@ -95,12 +109,24 @@ public class Query1 {
                 .name("Mapper")
                 .uid("Mapper");
 
-
-        GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
-        mapped.transform("DummyLatencySink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
-                .setParallelism(params.getInt("p-map", 1))
-        .name("Latency Sink")
-        .uid("Latency-Sink");
+        if (kafkaSinkAddress.isEmpty()) {
+            GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
+            mapped.transform("DummyLatencySink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
+                    .setParallelism(params.getInt("p-map", 1))
+            .name("Latency Sink")
+            .uid("Latency-Sink");
+        } else {
+            KafkaSink<Tuple4<Long, Long, Long, Long>> sink = KafkaSink.<Tuple4<Long, Long, Long, Long>>builder()
+            .setBootstrapServers(kafkaSinkAddress)
+            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                .setTopic(kafkaSinkTopic)
+                .setValueSerializationSchema(new JsonSerializationSchema<Tuple4<Long, Long, Long, Long>>())
+                .build()
+            )
+            .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+            .build();
+            mapped.sinkTo(sink);
+        }
 
         // execute program
         env.execute("Nexmark Query1");

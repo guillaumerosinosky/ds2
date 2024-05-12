@@ -20,8 +20,10 @@ public class GenericJsonDeserializationSchema<T> implements KafkaRecordDeseriali
 
     @Override
     public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<T> out) throws IOException {
-        T obj = objectMapper.readValue(record.value(), targetType);
-        out.collect(obj);
+        if (record.value() != null) {
+            T obj = objectMapper.readValue(record.value(), targetType);
+            out.collect(obj);
+        }
     }
 
     @Override

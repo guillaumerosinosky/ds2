@@ -18,6 +18,7 @@
 
 package ch.ethz.systems.strymon.ds2.flink.nexmark.queries;
 
+import ch.ethz.systems.strymon.ds2.flink.nexmark.generator.JsonSerializationSchema;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sinks.DummyLatencyCountingSink;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.AuctionSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.GenericJsonDeserializationSchema;
@@ -33,6 +34,9 @@ import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.TimeCharacteristic;
@@ -69,6 +73,15 @@ public class Query8 {
             env = StreamExecutionEnvironment.createRemoteEnvironment(remoteAddress.split(":")[0], Integer.parseInt(remoteAddress.split(":")[1]), "flink-examples/target/flink-examples-1.0-SNAPSHOT.jar");
         }
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        String kafkaSinkAddress = params.get("kafkaSinkAddress", "");
+        String kafkaSinkTopic = params.get("kafkaSinkTopic", "sink");
+        String kafkaStartingOffset = params.get("kafkaStartOffset", "latest");
+        OffsetsInitializer offsetsInitializer;
+        if (kafkaStartingOffset == "latest") {
+            offsetsInitializer = OffsetsInitializer.latest();
+        } else {
+            offsetsInitializer = OffsetsInitializer.earliest();
+        }        
         final int parallelism = params.getInt("parallelism", 1);
 
         final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
@@ -84,8 +97,6 @@ public class Query8 {
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
         env.getConfig().setAutoWatermarkInterval(1000);
 
-        env.setParallelism(params.getInt("p-window", 1));
-
         DataStream<Auction> auctions;
         if (kafkaAddress.isEmpty()) {
             auctions = env.addSource(new AuctionSourceFunction(auctionSrcRate), "auction", TypeInformation.of(Auction.class))
@@ -97,12 +108,14 @@ public class Query8 {
                 .setBootstrapServers(kafkaAddress)
                 .setTopics("auction")
                 .setGroupId("auction")
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<Auction>(Auction.class))
                 .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
                 .setProperty("fetch.min.bytes", fetchMinBytes.toString())
+                .setProperty("metadata.max.age.ms", "3600000")
+                .setProperty("max.in.flight.requests.per.connection", "1")
                 .build();
-                auctions = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "auctions kafka");
+                auctions = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "auctions kafka").assignTimestampsAndWatermarks(new AuctionTimestampAssigner());
         }
         DataStream<Person> persons;
         if (kafkaAddress.isEmpty()) {
@@ -115,12 +128,14 @@ public class Query8 {
                 .setBootstrapServers(kafkaAddress)
                 .setTopics("person")
                 .setGroupId("person")
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<Person>(Person.class))
                 .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
                 .setProperty("fetch.min.bytes", fetchMinBytes.toString())
+                .setProperty("metadata.max.age.ms", "3600000")
+                .setProperty("max.in.flight.requests.per.connection", "1")
                 .build();
-                persons = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "persons kafka");
+                persons = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "persons kafka").assignTimestampsAndWatermarks(new PersonTimestampAssigner());
         }   
         // SELECT Rstream(P.id, P.name, A.reserve)
         // FROM Person [RANGE 1 HOUR] P, Auction [RANGE 1 HOUR] A
@@ -148,10 +163,23 @@ public class Query8 {
                 });
 
 
-        GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
-        joined.transform("DummyLatencySink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
-                .setParallelism(params.getInt("p-window", 1));
 
+        if (kafkaSinkAddress.isEmpty()) {                
+            GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
+            joined.transform("DummyLatencySink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
+                    .setParallelism(params.getInt("p-window", 1));
+        } else {
+            KafkaSink<Tuple3<Long, String, Long>> sink = KafkaSink.<Tuple3<Long, String, Long>>builder()
+            .setBootstrapServers(kafkaSinkAddress)
+            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                .setTopic(kafkaSinkTopic)
+                .setValueSerializationSchema(new JsonSerializationSchema<Tuple3<Long, String, Long>>())
+                .build()
+            )
+            .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+            .build();
+            joined.sinkTo(sink);               
+        }
         // execute program
         env.execute("Nexmark Query8");
     }

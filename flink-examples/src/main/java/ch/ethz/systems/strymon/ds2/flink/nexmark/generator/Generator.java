@@ -43,6 +43,7 @@ public class Generator {
         KafkaSink<Bid> bidSink = KafkaSink.<Bid>builder()
             .setBootstrapServers(kafkaProducerAddress)
             .setProperty("properties.retries", "5")
+            .setProperty("metadata.max.age.ms", "3600000")
             .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                 .setTopic("bid")
                 .setKeySerializationSchema(new SerializationSchema<Bid>() {
@@ -51,7 +52,7 @@ public class Generator {
                         return Long.toString(bid.auction).getBytes(StandardCharsets.UTF_8);
                     }
                 })
-                .setValueSerializationSchema(new JsonSerializationSchema<>(Bid.class))
+                .setValueSerializationSchema(new JsonSerializationSchema<>())
                 .build())
             .build();    
     
@@ -59,6 +60,7 @@ public class Generator {
         KafkaSink<Auction> auctionSink = KafkaSink.<Auction>builder()
             .setBootstrapServers(kafkaProducerAddress)
             .setProperty("properties.retries", "5")
+            .setProperty("metadata.max.age.ms", "3600000")
             .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                 .setTopic("auction")
                 .setKeySerializationSchema(new SerializationSchema<Auction>() {
@@ -67,12 +69,13 @@ public class Generator {
                         return Long.toString(auction.id).getBytes(StandardCharsets.UTF_8);
                     }
                 })                
-                .setValueSerializationSchema(new JsonSerializationSchema<>(Auction.class))
+                .setValueSerializationSchema(new JsonSerializationSchema<>())
                 .build())
             .build();
         KafkaSink<Person> personSink = KafkaSink.<Person>builder()
             .setBootstrapServers(kafkaProducerAddress)
             .setProperty("properties.retries", "5")
+            .setProperty("metadata.max.age.ms", "3600000")
             .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                 .setTopic("person")
                 .setKeySerializationSchema(new SerializationSchema<Person>() {
@@ -81,7 +84,7 @@ public class Generator {
                         return Long.toString(person.id).getBytes(StandardCharsets.UTF_8);
                     }
                 })                
-                .setValueSerializationSchema(new JsonSerializationSchema<>(Person.class))
+                .setValueSerializationSchema(new JsonSerializationSchema<>())
                 .build())
             .build();    
 

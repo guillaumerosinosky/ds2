@@ -18,6 +18,7 @@
 
 package ch.ethz.systems.strymon.ds2.flink.nexmark.queries;
 
+import ch.ethz.systems.strymon.ds2.flink.nexmark.generator.JsonSerializationSchema;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sinks.DummyLatencyCountingSink;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.AuctionSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.BidSourceFunction;
@@ -35,6 +36,9 @@ import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -69,6 +73,15 @@ public class Query3 {
             env = StreamExecutionEnvironment.createRemoteEnvironment(remoteAddress.split(":")[0], Integer.parseInt(remoteAddress.split(":")[1]), "flink-examples/target/flink-examples-1.0-SNAPSHOT.jar");
         }
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        String kafkaSinkAddress = params.get("kafkaSinkAddress", "");
+        String kafkaSinkTopic = params.get("kafkaSinkTopic", "sink");
+        String kafkaStartingOffset = params.get("kafkaStartOffset", "latest");
+        OffsetsInitializer offsetsInitializer;
+        if (kafkaStartingOffset == "latest") {
+            offsetsInitializer = OffsetsInitializer.latest();
+        } else {
+            offsetsInitializer = OffsetsInitializer.earliest();
+        }
         final int parallelism = params.getInt("parallelism", 1);
 
         final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
@@ -92,7 +105,7 @@ public class Query3 {
                 .setBootstrapServers(kafkaAddress)
                 .setTopics("auction")
                 .setGroupId("auction")
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<Auction>(Auction.class))
                 .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
                 .setProperty("fetch.min.bytes", fetchMinBytes.toString())
@@ -111,7 +124,7 @@ public class Query3 {
                 .setBootstrapServers(kafkaAddress)
                 .setTopics("person")
                 .setGroupId("person")
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<Person>(Person.class))
                 .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
                 .setProperty("fetch.min.bytes", fetchMinBytes.toString())
@@ -119,7 +132,7 @@ public class Query3 {
                 persons = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "persons kafka");
         }        
 
-        persons.filter(new FilterFunction<Person>() {
+        persons = persons.filter(new FilterFunction<Person>() {
                     @Override
                     public boolean filter(Person person) throws Exception {
                         return (person.state.equals("OR") || person.state.equals("ID") || person.state.equals("CA"));
@@ -150,10 +163,22 @@ public class Query3 {
       DataStream<Tuple4<String, String, String, Long>> joined = keyedAuctions.connect(keyedPersons)
               .flatMap(new JoinPersonsWithAuctions()).name("Incremental join").setParallelism(params.getInt("p-join", 1));
 
-        GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
-        joined.transform("Sink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
-                .setParallelism(params.getInt("p-join", 1));
-
+        if (kafkaSinkAddress.isEmpty()) {              
+            GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
+            joined.transform("Sink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
+                    .setParallelism(params.getInt("p-join", 1));
+        } else {
+            KafkaSink<Tuple4<String, String, String, Long>> sink = KafkaSink.<Tuple4<String, String, String, Long>>builder()
+            .setBootstrapServers(kafkaSinkAddress)
+            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                .setTopic(kafkaSinkTopic)
+                .setValueSerializationSchema(new JsonSerializationSchema<Tuple4<String, String, String, Long>>())
+                .build()
+            )
+            .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+            .build();
+            joined.sinkTo(sink);            
+        }
         // execute program
         env.execute("Nexmark Query3");
     }

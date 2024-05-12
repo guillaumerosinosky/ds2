@@ -35,8 +35,12 @@ import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.formats.json.JsonSerializationSchema;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -67,6 +71,15 @@ public class Query5 {
             env = StreamExecutionEnvironment.createRemoteEnvironment(remoteAddress.split(":")[0], Integer.parseInt(remoteAddress.split(":")[1]), "flink-examples/target/flink-examples-1.0-SNAPSHOT.jar");
         }
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        String kafkaSinkAddress = params.get("kafkaSinkAddress", "");
+        String kafkaSinkTopic = params.get("kafkaSinkTopic", "sink");
+        String kafkaStartingOffset = params.get("kafkaStartOffset", "latest");
+        OffsetsInitializer offsetsInitializer;
+        if (kafkaStartingOffset == "latest") {
+            offsetsInitializer = OffsetsInitializer.latest();
+        } else {
+            offsetsInitializer = OffsetsInitializer.earliest();
+        }
         final int parallelism = params.getInt("parallelism", 1);
 
         final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
@@ -94,12 +107,13 @@ public class Query5 {
                 .setBootstrapServers(kafkaAddress)
                 .setTopics("bid")
                 .setGroupId("bid")
-                .setStartingOffsets(OffsetsInitializer.latest())
+                .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<Bid>(Bid.class))
                 .setProperty("fetch.max.wait.ms", fetchMaxWaitMs.toString())
                 .setProperty("fetch.min.bytes", fetchMinBytes.toString())
+                .setProperty("metadata.max.age.ms", "3600000")
                 .build();
-            bids = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "bid kafka");
+            bids = env.fromSource(source, WatermarkStrategy.forMonotonousTimestamps(), "bid kafka").assignTimestampsAndWatermarks(new TimestampAssigner());
         }
 
         // SELECT B1.auction, count(*) AS num
@@ -116,9 +130,22 @@ public class Query5 {
                 .name("Sliding Window")
                 .setParallelism(params.getInt("p-window", 1));
 
-        GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
-        windowed.transform("DummyLatencySink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
-                .setParallelism(params.getInt("p-window", 1));
+        if (kafkaSinkAddress.isEmpty()) {                
+            GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
+            windowed.transform("DummyLatencySink", objectTypeInfo, new DummyLatencyCountingSink<>(logger))
+                    .setParallelism(params.getInt("p-window", 1));
+        } else {
+            KafkaSink<Tuple2<Long, Long>> sink = KafkaSink.<Tuple2<Long, Long>>builder()
+            .setBootstrapServers(kafkaSinkAddress)
+            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                .setTopic(kafkaSinkTopic)
+                .setValueSerializationSchema(new JsonSerializationSchema<Tuple2<Long, Long>>())
+                .build()
+            )
+            .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+            .build();
+            windowed.sinkTo(sink);             
+        }
 
         // execute program
         env.execute("Nexmark Query5");

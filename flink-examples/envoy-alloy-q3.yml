@@ -35,17 +35,28 @@ static_resources:
                 additional_configuration:
                   max_parallelism: 128
                   debug_protocol: 0
+                  remove_empty_records: false
                 alloy_filters:
-                  bid:
+                  auction:
                     num_sources: 2
                     num_partitions: 2
-                    selections: 
+                    selections:
                     projections: 
-                    - auction
-                    - price
-                    - bidder
-                    - dateTime 
-                    partition:
+                    - id
+                    - seller
+                    partition: seller
+                  person:
+                    num_sources: 2
+                    num_partitions: 2
+                    selections:
+                    - attribute: state
+                      value: OR|ID|CA
+                    projections: 
+                    - id
+                    - name
+                    - city
+                    - state
+                    partition: id                
             vm_config:
               runtime: "envoy.wasm.runtime.wavm"
               vm_id: "alloy"

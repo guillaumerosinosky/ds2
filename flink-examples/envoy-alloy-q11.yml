@@ -39,13 +39,12 @@ static_resources:
                   bid:
                     num_sources: 2
                     num_partitions: 2
-                    selections: 
+                    selections:
                     projections: 
-                    - auction
-                    - price
+                    - id
                     - bidder
-                    - dateTime 
-                    partition:
+                    - dateTime
+                    partition: bidder
             vm_config:
               runtime: "envoy.wasm.runtime.wavm"
               vm_id: "alloy"
