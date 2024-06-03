@@ -57,9 +57,9 @@ import com.esotericsoftware.kryo.serializers.DefaultSerializers.BooleanSerialize
 import java.util.HashMap;
 import java.util.HashSet;
 
-public class Query3Stateful {
+public class Query3StatefulString {
 
-    private static final Logger logger = LoggerFactory.getLogger(Query3Stateful.class);
+    private static final Logger logger = LoggerFactory.getLogger(Query3StatefulString.class);
 
     public static void main(String[] args) throws Exception {
 
@@ -147,44 +147,43 @@ public class Query3Stateful {
                         return (person.state.equals("OR") || person.state.equals("ID") || person.state.equals("CA"));
                     }
                 });                
-            }
+            }            
         }
         // SELECT Istream(P.name, P.city, P.state, A.id)
         // FROM Auction A [ROWS UNBOUNDED], Person P [ROWS UNBOUNDED]
         // WHERE A.seller = P.id AND (P.state = `OR' OR P.state = `ID' OR P.state =
         // `CA')
-
         // TODO: set reinterpret here?
-        KeyedStream<Auction, Long> keyedAuctions;
+        KeyedStream<Auction, String> keyedAuctions;
         if (alloy) {
-            keyedAuctions = DataStreamUtils.reinterpretAsKeyedStream(auctions, new KeySelector<Auction, Long>() {
+            keyedAuctions = DataStreamUtils.reinterpretAsKeyedStream(auctions, new KeySelector<Auction, String>() {
                 @Override
-                public Long getKey(Auction auction) throws Exception {
-                    return auction.seller;
+                public String getKey(Auction auction) throws Exception {
+                    return Long.toString(auction.seller);
                 }
             });
         } else {
-            keyedAuctions = auctions.keyBy(new KeySelector<Auction, Long>() {
+            keyedAuctions = auctions.keyBy(new KeySelector<Auction, String>() {
                 @Override
-                public Long getKey(Auction auction) throws Exception {
-                    return auction.seller;
+                public String getKey(Auction auction) throws Exception {
+                    return Long.toString(auction.seller);
                 }
             });
         }
-
-        KeyedStream<Person, Long> keyedPersons;
+        
+        KeyedStream<Person, String> keyedPersons;
         if (alloy) {
-            keyedPersons = DataStreamUtils.reinterpretAsKeyedStream(persons, new KeySelector<Person, Long>() {
+            keyedPersons = DataStreamUtils.reinterpretAsKeyedStream(persons, new KeySelector<Person, String>() {
                 @Override
-                public Long getKey(Person person) throws Exception {
-                    return person.id;
+                public String getKey(Person person) throws Exception {
+                    return Long.toString(person.id);
                 }                
             });
         } else {
-            keyedPersons = persons.keyBy(new KeySelector<Person, Long>() {
+            keyedPersons = persons.keyBy(new KeySelector<Person, String>() {
                 @Override
-                public Long getKey(Person person) throws Exception {
-                    return person.id;
+                public String getKey(Person person) throws Exception {
+                    return Long.toString(person.id);
                 }
             });
         }

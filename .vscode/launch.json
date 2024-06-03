@@ -229,7 +229,7 @@
             "type": "java",
             "name": "**Query3Stateful Alloy",
             "request": "launch",
-            "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query3Stateful",
+            "mainClass": "ch.ethz.systems.strymon.ds2.flink.nexmark.queries.Query3StatefulString",
             "projectName": "flink-examples",
             "args": [
                 "--jobmanager.rpc.address",
@@ -241,8 +241,12 @@
                 "--kafkaSinkAddress",
                 "kafka-edge1:9092",
                 "--kafkaSinkTopic",
-                "q3-alloy",                             
+                "q3-alloy",
+                "--alloy",
+                "true",
                 "--detached",
+                "--p-join",
+                "2",
                 "--parallelism",
                 "2"
             ],  

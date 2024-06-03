@@ -50,7 +50,7 @@ static_resources:
                     num_partitions: 2
                     selections:
                     - attribute: state
-                      value: OR|ID|CA
+                      value: ^(OR|ID|CA)
                     projections: 
                     - id
                     - name

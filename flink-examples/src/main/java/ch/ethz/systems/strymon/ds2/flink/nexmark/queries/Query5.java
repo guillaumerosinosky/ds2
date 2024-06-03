@@ -43,6 +43,7 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.formats.json.JsonSerializationSchema;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.DataStreamUtils;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
@@ -50,6 +51,8 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.ibm.icu.impl.locale.LocaleDistance.Data;
 
 import javax.annotation.Nullable;
 
@@ -81,6 +84,7 @@ public class Query5 {
             offsetsInitializer = OffsetsInitializer.earliest();
         }
         final int parallelism = params.getInt("parallelism", 1);
+        final boolean alloy = params.getBoolean("alloy", false);
 
         final Integer fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
         final Integer fetchMinBytes = params.getInt("fetchMinBytes", 1);
@@ -119,16 +123,29 @@ public class Query5 {
         // SELECT B1.auction, count(*) AS num
         // FROM Bid [RANGE 60 MINUTE SLIDE 1 MINUTE] B1
         // GROUP BY B1.auction
-        //TODO: set reinterpret?
-        DataStream<Tuple2<Long, Long>> windowed = bids.keyBy(new KeySelector<Bid, Long>() {
-            @Override
-            public Long getKey(Bid bid) throws Exception {
-                return bid.auction;
-            }
-        }).timeWindow(Time.minutes(60), Time.minutes(1))
-                .aggregate(new CountBids())
-                .name("Sliding Window")
-                .setParallelism(params.getInt("p-window", 1));
+        DataStream<Tuple2<Long, Long>> windowed;
+        if (alloy) {
+            windowed = DataStreamUtils.reinterpretAsKeyedStream(bids, new KeySelector<Bid, Long>() {
+                @Override
+                public Long getKey(Bid bid) throws Exception {
+                    return bid.auction;
+                }
+            }).timeWindow(Time.minutes(60), Time.minutes(1))
+            .aggregate(new CountBids())
+            .name("Sliding Window")
+            .setParallelism(params.getInt("p-window", 1));
+        
+        } else {
+            windowed = bids.keyBy(new KeySelector<Bid, Long>() {
+                @Override
+                public Long getKey(Bid bid) throws Exception {
+                    return bid.auction;
+                }
+            }).timeWindow(Time.minutes(60), Time.minutes(1))
+                    .aggregate(new CountBids())
+                    .name("Sliding Window")
+                    .setParallelism(params.getInt("p-window", 1));
+        }
 
         if (kafkaSinkAddress.isEmpty()) {                
             GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);

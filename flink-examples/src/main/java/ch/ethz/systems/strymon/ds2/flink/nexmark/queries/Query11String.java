@@ -62,9 +62,9 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
-public class Query11 {
+public class Query11String {
 
-    private static final Logger logger  = LoggerFactory.getLogger(Query11.class);
+    private static final Logger logger  = LoggerFactory.getLogger(Query11String.class);
 
     public static void main(String[] args) throws Exception {
 
@@ -127,20 +127,20 @@ public class Query11 {
 
         DataStream<Tuple2<Long, Long>> windowed;
         if (alloy) {
-            windowed = DataStreamUtils.reinterpretAsKeyedStream(bids, new KeySelector<Bid, Long>() {
+            windowed = DataStreamUtils.reinterpretAsKeyedStream(bids, new KeySelector<Bid, String>() {
                 @Override
-                public Long getKey(Bid b) throws Exception {
-                    return b.auction;
+                public String getKey(Bid b) throws Exception {
+                    return Long.toString(b.bidder);
                 }
             }).window(EventTimeSessionWindows.withGap(Time.seconds(10)))
             .trigger(new MaxLogEventsTrigger())
             .aggregate(new CountBidsPerSession()).setParallelism(params.getInt("p-window", 1))
             .name("Session Window");
         } else {
-            windowed = bids.keyBy(new KeySelector<Bid, Long>() {
+            windowed = bids.keyBy(new KeySelector<Bid, String>() {
                 @Override
-                public Long getKey(Bid b) throws Exception {
-                    return b.bidder;
+                public String getKey(Bid b) throws Exception {
+                    return Long.toString(b.bidder);
                 }
             }).window(EventTimeSessionWindows.withGap(Time.seconds(10)))
             .trigger(new MaxLogEventsTrigger())

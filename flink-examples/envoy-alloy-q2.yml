@@ -41,7 +41,7 @@ static_resources:
                     num_partitions: 2
                     selections: 
                     - attribute: auction
-                      value: ^1001|^1002|^1003
+                      value: ^(1001|1002|1003)
                     projections: 
                     - auction
                     - price
