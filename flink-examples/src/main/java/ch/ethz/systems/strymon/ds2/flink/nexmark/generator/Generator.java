@@ -1,12 +1,18 @@
 package ch.ethz.systems.strymon.ds2.flink.nexmark.generator;
 
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Properties;
 
+import ch.ethz.systems.strymon.ds2.flink.nexmark.models.AuctionDT;
+import ch.ethz.systems.strymon.ds2.flink.nexmark.models.BidDT;
+import ch.ethz.systems.strymon.ds2.flink.nexmark.models.PersonDT;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 import org.apache.beam.sdk.nexmark.model.Auction;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Person;
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.java.utils.MultipleParameterTool;
@@ -39,84 +45,109 @@ public class Generator {
         Integer parallelism = params.getInt("parallelism", 1);
         env.setParallelism(parallelism);
         //env.disableOperatorChaining();
-        
-        KafkaSink<Bid> bidSink = KafkaSink.<Bid>builder()
-            .setBootstrapServers(kafkaProducerAddress)
-            .setProperty("properties.retries", "5")
-            .setProperty("metadata.max.age.ms", "3600000")
-            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
-                .setTopic("bid")
-                .setKeySerializationSchema(new SerializationSchema<Bid>() {
-                    @Override
-                    public byte[] serialize(Bid bid) {
-                        return Long.toString(bid.auction).getBytes(StandardCharsets.UTF_8);
-                    }
-                })
-                .setValueSerializationSchema(new JsonSerializationSchema<>())
-                .build())
-            .build();    
-    
+
+        KafkaSink<BidDT> bidSink = KafkaSink.<BidDT>builder()
+                .setBootstrapServers(kafkaProducerAddress)
+                .setProperty("properties.retries", "5")
+                .setProperty("metadata.max.age.ms", "3600000")
+                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                        .setTopic("bid")
+                        .setKeySerializationSchema(new SerializationSchema<BidDT>() {
+                            @Override
+                            public byte[] serialize(BidDT bid) {
+                                return Long.toString(bid.auction).getBytes(StandardCharsets.UTF_8);
+                            }
+                        })
+                        .setValueSerializationSchema(new JsonSerializationSchema<>())
+                        .build())
+                .build();
+
         // Define KafkaSink for Auction
-        KafkaSink<Auction> auctionSink = KafkaSink.<Auction>builder()
-            .setBootstrapServers(kafkaProducerAddress)
-            .setProperty("properties.retries", "5")
-            .setProperty("metadata.max.age.ms", "3600000")
-            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
-                .setTopic("auction")
-                .setKeySerializationSchema(new SerializationSchema<Auction>() {
-                    @Override
-                    public byte[] serialize(Auction auction) {
-                        return Long.toString(auction.id).getBytes(StandardCharsets.UTF_8);
-                    }
-                })                
-                .setValueSerializationSchema(new JsonSerializationSchema<>())
-                .build())
-            .build();
-        KafkaSink<Person> personSink = KafkaSink.<Person>builder()
-            .setBootstrapServers(kafkaProducerAddress)
-            .setProperty("properties.retries", "5")
-            .setProperty("metadata.max.age.ms", "3600000")
-            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
-                .setTopic("person")
-                .setKeySerializationSchema(new SerializationSchema<Person>() {
-                    @Override
-                    public byte[] serialize(Person person) {
-                        return Long.toString(person.id).getBytes(StandardCharsets.UTF_8);
-                    }
-                })                
-                .setValueSerializationSchema(new JsonSerializationSchema<>())
-                .build())
-            .build();    
+        KafkaSink<AuctionDT> auctionSink = KafkaSink.<AuctionDT>builder()
+                .setBootstrapServers(kafkaProducerAddress)
+                .setProperty("properties.retries", "5")
+                .setProperty("metadata.max.age.ms", "3600000")
+                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                        .setTopic("auction")
+                        .setKeySerializationSchema(new SerializationSchema<AuctionDT>() {
+                            @Override
+                            public byte[] serialize(AuctionDT auction) {
+                                return Long.toString(auction.id).getBytes(StandardCharsets.UTF_8);
+                            }
+                        })
+                        .setValueSerializationSchema(new JsonSerializationSchema<>())
+                        .build())
+                .build();
+        KafkaSink<PersonDT> personSink = KafkaSink.<PersonDT>builder()
+                .setBootstrapServers(kafkaProducerAddress)
+                .setProperty("properties.retries", "5")
+                .setProperty("metadata.max.age.ms", "3600000")
+                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                        .setTopic("person")
+                        .setKeySerializationSchema(new SerializationSchema<PersonDT>() {
+                            @Override
+                            public byte[] serialize(PersonDT person) {
+                                return Long.toString(person.id).getBytes(StandardCharsets.UTF_8);
+                            }
+                        })
+                        .setValueSerializationSchema(new JsonSerializationSchema<>())
+                        .build())
+                .build();
 
         if (bidRate > 0) {
             DataStream<Bid> bidStream = env.addSource(new BidSourceFunction(bidRate))
-                .setParallelism(params.getInt("p-bid-source", 1))
-                .name("Bids Source")
-                .uid("Bids-Source")
-                .slotSharingGroup("bid");
+                    .setParallelism(params.getInt("p-bid-source", 1))
+                    .name("Bids Source")
+                    .uid("Bids-Source")
+                    .slotSharingGroup("bid");
 
-            bidStream.sinkTo(bidSink);
+            bidStream.map(new BidMapFunction()).sinkTo(bidSink);
         }
 
         if (auctionRate > 0) {
             DataStream<Auction> auctionStream = env.addSource(new AuctionSourceFunction(auctionRate))
-                .name("Custom Source: Auctions")
-                .setParallelism(params.getInt("p-auction-source", 1))
-                .slotSharingGroup("auction");                  
+                    .name("Custom Source: Auctions")
+                    .setParallelism(params.getInt("p-auction-source", 1))
+                    .slotSharingGroup("auction");
 
-            auctionStream.sinkTo(auctionSink);
+            auctionStream.map(new AuctionMapFunction()).sinkTo(auctionSink);
         }
 
         if (personRate > 0) {
             DataStream<Person> personStream = env.addSource(new PersonSourceFunction(personRate))
-                .name("Persons source")
-                .setParallelism(params.getInt("p-person-source", 1))
-                .slotSharingGroup("person");                  
-            personStream.sinkTo(personSink);            
-        } 
+                    .name("Persons source")
+                    .setParallelism(params.getInt("p-person-source", 1))
+                    .slotSharingGroup("person");
+
+            personStream.map(new PersonMapFunction()).sinkTo(personSink);
+        }
 
 
 
         env.execute("Nexmark Kafka generator");
+    }
+
+    private static class PersonMapFunction implements MapFunction<Person, PersonDT> {
+
+        @Override
+        public PersonDT map(Person person) throws Exception {
+            return new PersonDT(person.id, person.name, person.emailAddress, person.creditCard, person.city, person.state, Timestamp.from(Instant.ofEpochMilli(person.dateTime)).toString(), person.extra);
+        }
+    }
+
+    private static class AuctionMapFunction implements MapFunction<Auction, AuctionDT> {
+
+        @Override
+        public AuctionDT map(Auction auction) throws Exception {
+            return new AuctionDT(auction.id, auction.itemName, auction.description, auction.initialBid, auction.reserve, Timestamp.from(Instant.ofEpochMilli(auction.dateTime)).toString(), Timestamp.from(Instant.ofEpochMilli(auction.expires)).toString(), auction.seller, auction.category, auction.extra);
+        }
+    }
+
+    private static class BidMapFunction implements MapFunction<Bid, BidDT> {
+
+        @Override
+        public BidDT map(Bid bid) throws Exception {
+            return new BidDT(bid.auction, bid.bidder, bid.price, Timestamp.from(Instant.ofEpochMilli(bid.dateTime)).toString(), bid.extra);
+        }
     }
 }
