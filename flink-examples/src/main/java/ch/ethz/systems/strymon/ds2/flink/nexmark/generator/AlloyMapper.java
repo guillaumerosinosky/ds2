@@ -1,8 +1,6 @@
 package ch.ethz.systems.strymon.ds2.flink.nexmark.generator;
 
-import ch.ethz.systems.strymon.ds2.flink.nexmark.models.AuctionDT;
-import ch.ethz.systems.strymon.ds2.flink.nexmark.models.BidDT;
-import ch.ethz.systems.strymon.ds2.flink.nexmark.models.PersonDT;
+import ch.ethz.systems.strymon.ds2.flink.nexmark.models.*;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.BidSourceFunction;
 import ch.ethz.systems.strymon.ds2.flink.nexmark.sources.GenericJsonDeserializationSchema;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -96,19 +94,7 @@ public class AlloyMapper {
                 .setBootstrapServers(kafkaAddress)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic("bid_q1")
-                        .setValueSerializationSchema(new SerializationSchema<BidDT>() {
-                            @Override
-                            public byte[] serialize(BidDT bid) {
-                                String ss = bid.toString();
-                                try {
-                                    return NexmarkUtils.MAPPER.writeValueAsBytes(removeFieldsFromEvent(ss, Arrays.asList("auction", "bidder", "price", "dateTime", "extra")));
-                                } catch (JsonProcessingException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }
-                        })
-                        .build()
-                )
+                        .setValueSerializationSchema(new JsonSerializationSchema<BidDT>()).build())
                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();
         bids.sinkTo(sink);
@@ -152,17 +138,7 @@ public class AlloyMapper {
                 .setBootstrapServers(kafkaAddress)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic("bid_q2")
-                        .setValueSerializationSchema(new SerializationSchema<BidDT>() {
-                            @Override
-                            public byte[] serialize(BidDT s) {
-                                String ss = s.toString();
-                                try {
-                                    return NexmarkUtils.MAPPER.writeValueAsBytes(removeFieldsFromEvent(ss, Arrays.asList("auction", "price")));
-                                } catch (JsonProcessingException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }
-                        }).build())
+                        .setValueSerializationSchema(new JsonSerializationSchema<BidDT>()).build())
                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();
         converted.sinkTo(sink);
@@ -209,71 +185,39 @@ public class AlloyMapper {
                 .setProperty("fetch.min.bytes", Integer.toString(fetchMinBytes))
                 .build();
 
-        DataStream<AuctionDT> auctions = env.fromSource(auctionSource, WatermarkStrategy.forMonotonousTimestamps(), "auctions kafka").filter(new FilterFunction<AuctionDT>() {
+        DataStream<AuctionQ3> auctions = env.fromSource(auctionSource, WatermarkStrategy.forMonotonousTimestamps(), "auctions kafka").filter(new FilterFunction<AuctionDT>() {
             @Override
             public boolean filter(AuctionDT auction) throws Exception {
                 return auction.category == 10;
             }
-        }).setParallelism(params.getInt("p-flatMap", 1));
+        }).setParallelism(params.getInt("p-flatMap", 1))
+                .map((MapFunction<AuctionDT, AuctionQ3>) auctionDT -> new AuctionQ3(auctionDT.id, auctionDT.seller));
 
-        DataStream<PersonDT> persons = env.fromSource(personSource, WatermarkStrategy.forMonotonousTimestamps(), "persons kafka").filter(new FilterFunction<PersonDT>() {
+        DataStream<PersonQ3> persons = env.fromSource(personSource, WatermarkStrategy.forMonotonousTimestamps(), "persons kafka").filter(new FilterFunction<PersonDT>() {
             @Override
             public boolean filter(PersonDT person) throws Exception {
                 return person.state.equals("CA") || person.state.equals("ID") || person.state.equals("OR") ;
             }
-        }).setParallelism(params.getInt("p-flatMap", 1));
+        }).setParallelism(params.getInt("p-flatMap", 1))
+                .map((MapFunction<PersonDT, PersonQ3>) personDT -> new PersonQ3(personDT.id, personDT.name, personDT.city, personDT.state));
 
-        KafkaSink<AuctionDT> auctionSink = KafkaSink.<AuctionDT>builder()
+        KafkaSink<AuctionQ3> auctionSink = KafkaSink.<AuctionQ3>builder()
                 .setBootstrapServers(kafkaAddress)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic("auction_q3")
-                        .setValueSerializationSchema(new SerializationSchema<AuctionDT>() {
-                            @Override
-                            public byte[] serialize(AuctionDT s) {
-                                String ss = s.toString();
-                                try {
-                                    return NexmarkUtils.MAPPER.writeValueAsBytes(removeFieldsFromEvent(ss, Arrays.asList("id", "seller")));
-                                } catch (JsonProcessingException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }
-                        }).build())
+                        .setValueSerializationSchema(new JsonSerializationSchema<AuctionQ3>()).build())
                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();
 
-        KafkaSink<PersonDT> personSink = KafkaSink.<PersonDT>builder()
+        KafkaSink<PersonQ3> personSink = KafkaSink.<PersonQ3>builder()
                 .setBootstrapServers(kafkaAddress)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic("person_q3")
-                        .setValueSerializationSchema(new SerializationSchema<PersonDT>() {
-                            @Override
-                            public byte[] serialize(PersonDT s) {
-                                String ss = s.toString();
-                                try {
-                                    return NexmarkUtils.MAPPER.writeValueAsBytes(removeFieldsFromEvent(ss, Arrays.asList("name", "state", "city", "id")));
-                                } catch (JsonProcessingException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }
-                        }).build())
+                        .setValueSerializationSchema(new JsonSerializationSchema<PersonQ3>()).build())
                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();
         auctions.keyBy(a -> a.seller).sinkTo(auctionSink);
         persons.keyBy(p -> p.id).sinkTo(personSink);
         env.execute("Nexmark Query3");
-    }
-
-
-    private static String removeFieldsFromEvent(String event, List<String> fieldsToKeep) {
-        List<String> newFields = new ArrayList<>();
-        for(String s: event.substring(1, event.length()-1).split(",")) {
-            for (String field: fieldsToKeep) {
-                if (s.contains(field)) {
-                    newFields.add(s);
-                    break;
-                }
-            }
-        }
-        return "{" + String.join(",", newFields) + "}";
     }
 }
