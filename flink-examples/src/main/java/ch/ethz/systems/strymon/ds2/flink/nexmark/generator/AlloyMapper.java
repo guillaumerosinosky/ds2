@@ -25,6 +25,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.util.Collector;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -149,8 +150,6 @@ public class AlloyMapper {
         String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
         final int parallelism = params.getInt("parallelism", 1);
 
-        final int fetchMaxWaitMs = params.getInt("fetchMaxWaitMs", 500);
-        final int fetchMinBytes = params.getInt("fetchMinBytes", 1);
         // fetch.max.bytes default: 55Mb max.message.bytes default: 1Mb // see if necessary
         String kafkaStartingOffset = params.get("kafkaStartOffset", "latest");
         OffsetsInitializer offsetsInitializer;
@@ -171,8 +170,6 @@ public class AlloyMapper {
                 .setGroupId("auction")
                 .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<AuctionDT>(AuctionDT.class))
-                .setProperty("fetch.max.wait.ms", Integer.toString(fetchMaxWaitMs))
-                .setProperty("fetch.min.bytes", Integer.toString(fetchMinBytes))
                 .build();
 
         KafkaSource<PersonDT> personSource = KafkaSource.<PersonDT>builder()
@@ -181,8 +178,6 @@ public class AlloyMapper {
                 .setGroupId("person")
                 .setStartingOffsets(offsetsInitializer)
                 .setDeserializer(new GenericJsonDeserializationSchema<PersonDT>(PersonDT.class))
-                .setProperty("fetch.max.wait.ms", Integer.toString(fetchMaxWaitMs))
-                .setProperty("fetch.min.bytes", Integer.toString(fetchMinBytes))
                 .build();
 
         DataStream<AuctionQ3> auctions = env.fromSource(auctionSource, WatermarkStrategy.forMonotonousTimestamps(), "auctions kafka").filter(new FilterFunction<AuctionDT>() {
@@ -205,16 +200,16 @@ public class AlloyMapper {
                 .setBootstrapServers(kafkaAddress)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic("auction_q3")
+                        .setKeySerializationSchema((SerializationSchema<AuctionQ3>) auction -> Long.toString(auction.seller).getBytes(StandardCharsets.UTF_8))
                         .setValueSerializationSchema(new JsonSerializationSchema<AuctionQ3>()).build())
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();
 
         KafkaSink<PersonQ3> personSink = KafkaSink.<PersonQ3>builder()
                 .setBootstrapServers(kafkaAddress)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic("person_q3")
+                        .setKeySerializationSchema((SerializationSchema<PersonQ3>) personQ3 -> Long.toString(personQ3.id).getBytes(StandardCharsets.UTF_8))
                         .setValueSerializationSchema(new JsonSerializationSchema<PersonQ3>()).build())
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();
         auctions.keyBy(a -> a.seller).sinkTo(auctionSink);
         persons.keyBy(p -> p.id).sinkTo(personSink);

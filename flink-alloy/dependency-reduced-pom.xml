@@ -4,18 +4,11 @@
   <groupId>be.uclouvain.gepiciad</groupId>
   <artifactId>flink-alloy</artifactId>
   <name>flink-alloy</name>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.1</version>
   <url>http://www.example.com</url>
   <build>
     <pluginManagement />
     <plugins>
-      <plugin>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <source>8</source>
-          <target>8</target>
-        </configuration>
-      </plugin>
       <plugin>
         <artifactId>maven-shade-plugin</artifactId>
         <executions>
@@ -34,12 +27,50 @@
               </transformers>
             </configuration>
           </execution>
+          <execution>
+            <id>Query3</id>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <finalName>Query3</finalName>
+              <transformers>
+                <transformer>
+                  <mainClass>be.uclouvain.gepiciad.Query3</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+          <execution>
+            <id>Query3Alloyed</id>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <finalName>Query3Alloyed</finalName>
+              <transformers>
+                <transformer>
+                  <mainClass>be.uclouvain.gepiciad.Query3Alloyed</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
     </plugins>
   </build>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-sql-connector-kafka</artifactId>
+      <version>1.16.2</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.target>11</maven.compiler.target>
+    <maven.compiler.source>11</maven.compiler.source>
   </properties>
 </project>
