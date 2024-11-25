@@ -40,6 +40,7 @@ public class Generator {
         final int bidRate = params.getInt("bidRate", 0);
         final int auctionRate = params.getInt("auctionRate", 0);
         final int personRate = params.getInt("personRate", 0);
+        final int latencyRate = params.getInt("latencyRate", 0);
 
 
         Integer parallelism = params.getInt("parallelism", 1);
@@ -69,9 +70,32 @@ public class Generator {
                 .setProperty("metadata.max.age.ms", "3600000")
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic("auction")
+
                         .setKeySerializationSchema(new SerializationSchema<AuctionDT>() {
                             @Override
                             public byte[] serialize(AuctionDT auction) {
+                                if (params.get("auctionKey", "id").equals("seller")) {
+                                    return Long.toString(auction.seller).getBytes(StandardCharsets.UTF_8);
+                                }
+                                return Long.toString(auction.id).getBytes(StandardCharsets.UTF_8);
+                            }
+                        })
+                        .setValueSerializationSchema(new JsonSerializationSchema<>())
+                        .build())
+                .build();
+
+        KafkaSink<Auction> latencySink = KafkaSink.<Auction>builder()
+                .setBootstrapServers(kafkaProducerAddress)
+                .setProperty("properties.retries", "5")
+                .setProperty("metadata.max.age.ms", "3600000")
+                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                        .setTopic("auction")
+                        .setKeySerializationSchema(new SerializationSchema<Auction>() {
+                            @Override
+                            public byte[] serialize(Auction auction) {
+                                if (params.get("auctionKey", "id").equals("seller")) {
+                                    return Long.toString(auction.seller).getBytes(StandardCharsets.UTF_8);
+                                }
                                 return Long.toString(auction.id).getBytes(StandardCharsets.UTF_8);
                             }
                         })
@@ -113,6 +137,15 @@ public class Generator {
             auctionStream.map(new AuctionMapFunction()).sinkTo(auctionSink);
         }
 
+        if (latencyRate > 0) {
+            DataStream<Auction> auctionStream = env.addSource(new AuctionSourceFunction(latencyRate))
+                    .name("Custom Source: Auctions")
+                    .setParallelism(params.getInt("p-auction-source", 1))
+                    .slotSharingGroup("auction");
+
+            auctionStream.map(new LatencyMapFunction()).sinkTo(latencySink);
+        }
+
         if (personRate > 0) {
             DataStream<Person> personStream = env.addSource(new PersonSourceFunction(personRate))
                     .name("Persons source")
@@ -140,6 +173,14 @@ public class Generator {
         @Override
         public AuctionDT map(Auction auction) throws Exception {
             return new AuctionDT(auction.id, auction.itemName, auction.description, auction.initialBid, auction.reserve, Timestamp.from(Instant.ofEpochMilli(auction.dateTime)).toString(), Timestamp.from(Instant.ofEpochMilli(auction.expires)).toString(), auction.seller, auction.category, auction.extra);
+        }
+    }
+
+    private static class LatencyMapFunction implements MapFunction<Auction, Auction> {
+
+        @Override
+        public Auction map(Auction auction) throws Exception {
+            return new Auction(auction.id, auction.itemName, auction.description, auction.initialBid, auction.reserve, System.currentTimeMillis(), auction.expires, auction.seller, auction.category, auction.extra);
         }
     }
 

@@ -52,6 +52,9 @@ public class AlloyMapper {
             case "Q3":
                 Q3(env, params);
                 break;
+            case "motivation":
+                motivation(env, params);
+                break;
             default:
                 Q1(env, params);
                 break;
@@ -213,6 +216,47 @@ public class AlloyMapper {
                 .build();
         auctions.keyBy(a -> a.seller).sinkTo(auctionSink);
         persons.keyBy(p -> p.id).sinkTo(personSink);
+        env.execute("Nexmark Query3");
+    }
+
+    public static void motivation(StreamExecutionEnvironment env, MultipleParameterTool params) throws Exception {
+        String kafkaAddress = params.get("kafkaAddress", "kafka-edge1:9092,localhost:9094");
+        final int parallelism = params.getInt("parallelism", 1);
+
+        // fetch.max.bytes default: 55Mb max.message.bytes default: 1Mb // see if necessary
+        String kafkaStartingOffset = params.get("kafkaStartOffset", "latest");
+        OffsetsInitializer offsetsInitializer;
+        if (kafkaStartingOffset.equals("latest")) {
+            offsetsInitializer = OffsetsInitializer.latest();
+        } else {
+            offsetsInitializer = OffsetsInitializer.earliest();
+        }
+        // We keep operator chaining
+        //env.disableOperatorChaining();
+        env.setParallelism(parallelism);
+        // enable latency tracking
+        env.getConfig().setLatencyTrackingInterval(5000);
+
+        KafkaSource<AuctionDT> auctionSource = KafkaSource.<AuctionDT>builder()
+                .setBootstrapServers(kafkaAddress)
+                .setTopics("auction")
+                .setGroupId("auction")
+                .setStartingOffsets(offsetsInitializer)
+                .setDeserializer(new GenericJsonDeserializationSchema<AuctionDT>(AuctionDT.class))
+                .build();
+
+
+        DataStream<AuctionDT> auctions = env.fromSource(auctionSource, WatermarkStrategy.forMonotonousTimestamps(), "auctions kafka");
+
+        KafkaSink<AuctionDT> auctionSink = KafkaSink.<AuctionDT>builder()
+                .setBootstrapServers(kafkaAddress)
+                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                        .setTopic("auction_moti")
+                        .setKeySerializationSchema((SerializationSchema<AuctionDT>) auction -> Long.toString(auction.seller).getBytes(StandardCharsets.UTF_8))
+                        .setValueSerializationSchema(new JsonSerializationSchema<AuctionDT>()).build())
+                .build();
+
+        auctions.keyBy(a -> a.seller).sinkTo(auctionSink);
         env.execute("Nexmark Query3");
     }
 }
